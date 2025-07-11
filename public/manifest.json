@@ -1,26 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "My Extension",
-  "version": "1.0.0",
-  "description": "A basic Chrome extension",
+  "name": "Indeed Auto Apply",
+  "version": "1.0",
+  "description": "Auto-apply to jobs on Indeed",
+  "permissions": ["scripting", "tabs"],
+  "host_permissions": ["*://*.indeed.com/*", "*://*.in.indeed.com/*"],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "Auto Apply"
   },
-  "permissions": [
-    "storage",
-    "activeTab",
-    "scripting"
-  ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "*://*.indeed.com/*",
-        "*://indeed.com/*"
-      ],
+      "matches": ["*://*.indeed.com/*", "*://*.in.indeed.com/*"],
       "js": ["content.js"]
     }
   ]

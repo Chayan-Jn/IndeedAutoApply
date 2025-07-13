@@ -16,6 +16,9 @@ window.addEventListener('load', () => {
 });
 
 
+
+
+
 // === Called from extension popup ===
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'trigger_search') {
@@ -134,6 +137,64 @@ function clickApplyButton() {
         console.warn('❌ Could not find job details link.');
       }
 
+      clearInterval(interval);
+      return;
+    }
+
+    console.log(`🔄 Attempt ${attempts}/${maxAttempts} - still waiting...`);
+
+    if (attempts >= maxAttempts) {
+      console.warn('❌ Apply button not found after retries.');
+      clearInterval(interval);
+    }
+  }, 1000);
+}
+
+
+
+// FOR VIEWJOB PAGE
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const url = window.location.href;
+    if (url.includes('/viewjob')) {
+      console.log('[Content] On viewjob page trying to apply automatically');
+      handleViewJobPage();
+    }
+  }, 2000);
+});
+
+function handleViewJobPage() {
+  console.log('[Content] Handling viewjob page trying to apply automatically');
+  waitAndClickApplyButton();
+}
+
+
+function waitAndClickApplyButton() {
+  console.log('⏳ Waiting for Apply button or job URL...');
+
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  const interval = setInterval(() => {
+    attempts++;
+
+    const hiddenInput = document.querySelector('input[name="jobUrl"]');
+    if (hiddenInput && hiddenInput.value) {
+      console.log('✅ Found job URL:', hiddenInput.value);
+      chrome.runtime.sendMessage({
+        type: 'open_job_tab',
+        url: hiddenInput.value
+      });
+      clearInterval(interval);
+      return;
+    }
+
+    const applyBtn = document.querySelector('button[aria-label*="Apply now" i]');
+
+    if (applyBtn) {
+      console.log('✅ Apply button found, clicking.');
+      applyBtn.click();
       clearInterval(interval);
       return;
     }

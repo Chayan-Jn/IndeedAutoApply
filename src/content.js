@@ -15,6 +15,7 @@ window.addEventListener('load', () => {
   }, 2500);
 });
 
+
 // === Called from extension popup ===
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'trigger_search') {
@@ -71,10 +72,8 @@ function startAutoApply(searchTerm) {
           if (link) {
             console.log('✅ Match found, clicking job:', jobTitle);
   
-            // Scroll to make sure React registers it
             link.scrollIntoView({ behavior: 'smooth', block: 'center' });
   
-            // Dispatch mouse event (for blue box selection)
             const mouseEvent = new MouseEvent('click', {
               bubbles: true,
               cancelable: true,
@@ -82,10 +81,12 @@ function startAutoApply(searchTerm) {
             });
             link.dispatchEvent(mouseEvent);
   
-            // Fallback click (ensures job loads)
             setTimeout(() => {
               link.click();
-            }, 100); // short delay to let React process the event first
+              setTimeout(() => {
+                clickApplyButton();
+              }, 2000);
+            }, 100);
   
             return;
           }
@@ -94,5 +95,54 @@ function startAutoApply(searchTerm) {
     }
   
     console.log('❌ No matching job found on this page');
-  }
-  
+}
+
+// === Reliable Apply button click + fallback open new tab ===
+function clickApplyButton() {
+  console.log('⏳ Waiting for Apply button or job URL...');
+
+  let attempts = 0;
+  const maxAttempts = 10;
+
+  const interval = setInterval(() => {
+    attempts++;
+
+    const hiddenInput = document.querySelector('input[name="jobUrl"]');
+    if (hiddenInput && hiddenInput.value) {
+      console.log('✅ Found job URL:', hiddenInput.value);
+      chrome.runtime.sendMessage({
+        type: 'open_job_tab',
+        url: hiddenInput.value
+      });
+      clearInterval(interval);
+      return;
+    }
+
+    const applyBtn = [...document.querySelectorAll('button')]
+      .find(btn => btn.innerText.trim().toLowerCase() === 'apply now');
+
+    if (applyBtn) {
+      console.log('✅ Apply button found, fallback opening job detail link.');
+
+      const jobLink = document.querySelector('a[data-jk], a[href*="/rc/clk"]');
+      if (jobLink && jobLink.href) {
+        chrome.runtime.sendMessage({
+          type: 'open_job_tab',
+          url: jobLink.href
+        });
+      } else {
+        console.warn('❌ Could not find job details link.');
+      }
+
+      clearInterval(interval);
+      return;
+    }
+
+    console.log(`🔄 Attempt ${attempts}/${maxAttempts} - still waiting...`);
+
+    if (attempts >= maxAttempts) {
+      console.warn('❌ Apply button not found after retries.');
+      clearInterval(interval);
+    }
+  }, 1000);
+}

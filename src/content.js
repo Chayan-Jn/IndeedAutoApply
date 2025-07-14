@@ -1,31 +1,31 @@
 console.log('[Content] Script loaded');
 console.log('[Content] Current URL:', window.location.href);
 
-// On page load: only auto-apply if already on search results page
+// On search results page: collect matching job links into queue
 window.addEventListener('load', () => {
   setTimeout(() => {
     const url = window.location.href;
     if (url.includes('/jobs?q=')) {
       console.log('[Content] On search results page');
       const queryParam = new URLSearchParams(window.location.search).get('q') || '';
-      startAutoApply(queryParam.toLowerCase());
+      collectMatchingJobLinks(queryParam.toLowerCase());
     } else {
       console.log('[Content] On homepage – waiting for extension trigger');
     }
   }, 2500);
 });
 
-//  Called from extension popup 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+// Trigger search from popup message
+chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'trigger_search') {
     console.log('[Content] trigger_search received:', msg);
     setTimeout(() => {
       fillAndSubmitSearchForm(msg.job || '', msg.location || 'India');
-    }, 1500); // slight delay to ensure page is ready
+    }, 1500);
   }
 });
 
-// Fill inputs and trigger the search 
+// Fill inputs and submit search form
 function fillAndSubmitSearchForm(job, location) {
   const jobInput = document.querySelector('input[name="q"]');
   const locationInput = document.querySelector('input[name="l"]');
@@ -55,105 +55,44 @@ function fillAndSubmitSearchForm(job, location) {
   }
 }
 
-//  Auto-click first matching job 
-function startAutoApply(searchTerm) {
-    const jobCards = document.querySelectorAll('div.cardOutline.tapItem');
-    console.log(`[Content] Found ${jobCards.length} job cards`);
-  
-    for (const card of jobCards) {
-      const titleSpan = card.querySelector('h2.jobTitle a span[title]');
-      if (titleSpan) {
-        const jobTitle = titleSpan.title.toLowerCase();
-        console.log('🔎 Found job title:', jobTitle);
-  
-        if (jobTitle.includes(searchTerm)) {
-          const link = titleSpan.closest('a');
-          if (link) {
-            console.log('✅ Match found, clicking job:', jobTitle);
-  
-            link.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  
-            const mouseEvent = new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              view: window
-            });
-            link.dispatchEvent(mouseEvent);
-  
-            setTimeout(() => {
-              link.click();
-              setTimeout(() => {
-                clickApplyButton();
-              }, 2000);
-            }, 100);
-  
-            return;
-          }
-        }
+// Collect matching job links to queue (filter out applied and "Apply on company site")
+function collectMatchingJobLinks(searchTerm) {
+  const jobCards = document.querySelectorAll('div.cardOutline.tapItem');
+  const links = [];
+
+  jobCards.forEach(card => {
+    const titleSpan = card.querySelector('h2.jobTitle a span[title]');
+    const appliedBadge = card.querySelector('[aria-label*="Applied"]');
+    const companySiteApplyBadge = card.querySelector('[aria-label*="Apply on company site"]');
+    const companySiteApplyText = card.innerText.toLowerCase().includes('apply on company site');
+
+    if (titleSpan && !appliedBadge && !companySiteApplyBadge && !companySiteApplyText) {
+      const jobTitle = titleSpan.title.toLowerCase();
+      if (jobTitle.includes(searchTerm)) {
+        const link = titleSpan.closest('a')?.href;
+        if (link) links.push(link);
       }
     }
-  
-    console.log('❌ No matching job found on this page');
-}
+  });
 
-//  Reliable Apply button click + fallback open new tab 
-function clickApplyButton() {
-  console.log('⏳ Waiting for Apply button or job URL...');
-
-  let attempts = 0;
-  const maxAttempts = 10;
-
-  const interval = setInterval(() => {
-    attempts++;
-
-    const hiddenInput = document.querySelector('input[name="jobUrl"]');
-    if (hiddenInput && hiddenInput.value) {
-      console.log('✅ Found job URL:', hiddenInput.value);
-      chrome.runtime.sendMessage({
-        type: 'open_job_tab',
-        url: hiddenInput.value
-      });
-      clearInterval(interval);
-      return;
-    }
-
-    const applyBtn = [...document.querySelectorAll('button')]
-      .find(btn => btn.innerText.trim().toLowerCase() === 'apply now');
-
-    if (applyBtn) {
-      console.log('✅ Apply button found, fallback opening job detail link.');
-
-      const jobLink = document.querySelector('a[data-jk], a[href*="/rc/clk"]');
-      if (jobLink && jobLink.href) {
-        chrome.runtime.sendMessage({
-          type: 'open_job_tab',
-          url: jobLink.href
-        });
-      } else {
-        console.warn('❌ Could not find job details link.');
-      }
-
-      clearInterval(interval);
-      return;
-    }
-
-    console.log(`🔄 Attempt ${attempts}/${maxAttempts} - still waiting...`);
-
-    if (attempts >= maxAttempts) {
-      console.warn('❌ Apply button not found after retries.');
-      clearInterval(interval);
-    }
-  }, 1000);
+  console.log(`[Content] Collected ${links.length} links for queue`);
+  chrome.runtime.sendMessage({ type: 'init_queue', links });
 }
 
 
-
-// FOR VIEWJOB PAGE
-
+// Handle /viewjob page auto-apply flow
 window.addEventListener('load', () => {
   setTimeout(() => {
-    const url = window.location.href;
-    if (url.includes('/viewjob')) {
+    if (window.location.href.includes('/viewjob')) {
+
+      const pageText = document.body.innerText.toLowerCase();
+      // Check for external apply and close tab if found
+      if (pageText.includes('apply on company site')) {
+        console.log('[Content] Detected "Apply on company site" on job page, closing tab');
+        chrome.runtime.sendMessage({ type: 'close_this_tab' });
+        return;
+      }
+
       console.log('On viewjob page trying to apply automatically');
       handleViewJobPage();
     }
@@ -165,10 +104,8 @@ function handleViewJobPage() {
   waitAndClickApplyButton();
 }
 
-
 function waitAndClickApplyButton() {
   console.log('⏳ Waiting for Apply button or job URL...');
-
   let attempts = 0;
   const maxAttempts = 10;
 
@@ -178,16 +115,13 @@ function waitAndClickApplyButton() {
     const hiddenInput = document.querySelector('input[name="jobUrl"]');
     if (hiddenInput && hiddenInput.value) {
       console.log('✅ Found job URL:', hiddenInput.value);
-      chrome.runtime.sendMessage({
-        type: 'open_job_tab',
-        url: hiddenInput.value
-      });
+      // Remove this call to open_job_tab to prevent duplicate tabs opening
+      // chrome.runtime.sendMessage({ type: 'open_job_tab', url: hiddenInput.value });
       clearInterval(interval);
       return;
     }
 
     const applyBtn = document.querySelector('button[aria-label*="Apply now" i]');
-
     if (applyBtn) {
       console.log('✅ Apply button found, clicking.');
       applyBtn.click();
@@ -204,65 +138,26 @@ function waitAndClickApplyButton() {
   }, 1000);
 }
 
-
-// smart apply page
+// Handle smartapply pages: wait for manual resume selection then click continue and watch post-resume flow
 window.addEventListener('load', () => {
   setTimeout(() => {
-    const url = window.location.href;
-    if (url.includes('smartapply')) {
+    if (window.location.href.includes('smartapply')) {
       console.log('On SmartApply page. Waiting 15 seconds for manual resume selection...');
-
       setTimeout(() => {
         console.log('⏳ 15 seconds passed. Attempting to click Continue...');
         const continueBtn = [...document.querySelectorAll('button')]
-            .find(btn => btn.innerText.trim().toLowerCase() === 'continue');
-
+          .find(btn => btn.innerText.trim().toLowerCase() === 'continue');
         if (continueBtn) {
-              continueBtn.click();
-              console.log('✅ Clicked Continue on SmartApply');
-              setTimeout(() => {
-                  handlePostResumeFlow();
-              }, 3000); // Small delay to allow next page to load
-          } else {
+          continueBtn.click();
+          console.log('✅ Clicked Continue on SmartApply');
+          setTimeout(handlePostResumeFlow, 3000);
+        } else {
           console.warn('❌ Continue button not found on SmartApply');
         }
       }, 15000);
-    }
-  }, 2000);
-});
 
-
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    const url = window.location.href;
-    if (url.includes('smartapply')) {
-      console.log('On SmartApply page. Waiting 15 seconds for manual resume selection...');
-
-      setTimeout(() => {
-        console.log('⏳ 15 seconds passed. Attempting to click Continue...');
-        const continueBtn = [...document.querySelectorAll('button')]
-            .find(btn => btn.innerText.trim().toLowerCase() === 'continue');
-
-        if (continueBtn) {
-              continueBtn.click();
-              console.log('✅ Clicked Continue on SmartApply');
-              setTimeout(() => {
-                  handlePostResumeFlow();
-              }, 3000); // Small delay to allow next page to load
-          } else {
-          console.warn('❌ Continue button not found on SmartApply');
-        }
-      }, 15000);
-    }
-
-    // 👇 ADD THIS
-    if (url.includes('smartapply')) {
       console.log('👀 Watching SmartApply page for post-upload flow...');
-
-      const interval = setInterval(() => {
-        handlePostResumeFlow();
-      }, 3000);
-
+      const interval = setInterval(handlePostResumeFlow, 3000);
       setTimeout(() => {
         clearInterval(interval);
         console.log('🛑 Stopped watching SmartApply after 1 minute');
@@ -271,41 +166,86 @@ window.addEventListener('load', () => {
   }, 2000);
 });
 
+// Post resume upload flow handler
 function handlePostResumeFlow() {
   console.log('🔍 Checking post-resume-upload flow...');
 
-  // Case 1️⃣ - Confirmation Page: Application submitted
-  if (document.body.innerText.toLowerCase().includes('application submitted')) {
-      console.log('✅ Application submitted. Sending message to close tab...');
-      chrome.runtime.sendMessage({ type: 'close_this_tab' });
-      return;
+  const bodyText = document.body.innerText.toLowerCase();
+
+  // Check for success message text
+  if (
+    bodyText.includes('your application has been submitted!') ||
+    bodyText.includes('keep track of your applications')
+  ) {
+    console.log('✅ Application confirmed by success message. Sending message to close tab...');
+    chrome.runtime.sendMessage({ type: 'close_this_tab' });
+    return;
   }
 
-  // Case 2️⃣ - Additional Employer Questions / SmartApply Continue Buttons / Submit
+  // Check for "Return to job search" button - good sign application is done
+  const returnToSearchBtn = [...document.querySelectorAll('button, a')]
+    .find(el => el.innerText.trim().toLowerCase().includes('return to job search'));
+
+  if (returnToSearchBtn) {
+    console.log('✅ Found "Return to job search" button - closing tab');
+    chrome.runtime.sendMessage({ type: 'close_this_tab' });
+    return;
+  }
+
+  // Your existing next/submit/continue buttons check
   const nextOrSubmitOrContinueBtn = [...document.querySelectorAll('button')]
-      .find(btn => {
-          const text = btn.innerText.trim().toLowerCase();
-          return text.includes('next') || text.includes('submit') || text.includes('continue');
-      });
+    .find(btn => {
+      const text = btn.innerText.trim().toLowerCase();
+      return text.includes('next') || text.includes('submit') || text.includes('continue');
+    });
 
   const testIdContinueBtn = document.querySelector('button[data-testid="continue-button"]');
 
   if (nextOrSubmitOrContinueBtn) {
-      console.log('➡️ Found "Next", "Submit", or "Continue" button. Clicking...');
-      nextOrSubmitOrContinueBtn.click();
-      return;
+    console.log('➡️ Found "Next", "Submit", or "Continue" button. Clicking...');
+    nextOrSubmitOrContinueBtn.click();
+    return;
   } else if (testIdContinueBtn) {
-      console.log('➡️ Found button with data-testid="continue-button". Clicking...');
-      testIdContinueBtn.click();
-      return;
+    console.log('➡️ Found button with data-testid="continue-button". Clicking...');
+    testIdContinueBtn.click();
+    return;
   }
 
-  // Case 3️⃣ - Redirected to External Site (not on Indeed)
+  // If redirected off Indeed, close tab
   if (!window.location.hostname.includes('indeed.com')) {
-      console.log('🌐 Redirected off Indeed to:', window.location.hostname);
-      chrome.runtime.sendMessage({ type: 'close_this_tab' });
-      return;
+    console.log('🌐 Redirected off Indeed to:', window.location.hostname);
+    chrome.runtime.sendMessage({ type: 'close_this_tab' });
+    return;
   }
 
   console.log('❌ No recognizable post-upload flow detected.');
 }
+
+// Handle intervention page "Apply anyway" button with retry 5 times max
+window.addEventListener('load', () => {
+  if (window.location.href.includes('smartapply.indeed.com/beta/indeedapply/form/questions-module/intervention')) {
+    console.log('⚠️ On intervention page - attempting to click Apply Anyway (max 5 attempts)');
+
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    const interval = setInterval(() => {
+      attempts++;
+
+      const button = document.querySelector('button[data-testid]');
+      if (button && button.innerText.trim().toLowerCase().includes('apply anyway')) {
+        button.click();
+        console.log('✅ Clicked Apply Anyway on attempt', attempts);
+        clearInterval(interval);
+        return;
+      }
+
+      console.log(`🔄 Attempt ${attempts}/${maxAttempts} - Apply Anyway not found yet`);
+
+      if (attempts >= maxAttempts) {
+        console.warn('❌ Failed to find Apply Anyway after 5 attempts.');
+        clearInterval(interval);
+      }
+    }, 1000);
+  }
+});

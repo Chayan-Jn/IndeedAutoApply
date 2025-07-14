@@ -15,11 +15,7 @@ window.addEventListener('load', () => {
   }, 2500);
 });
 
-
-
-
-
-// === Called from extension popup ===
+//  Called from extension popup 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'trigger_search') {
     console.log('[Content] trigger_search received:', msg);
@@ -29,7 +25,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// === Fill inputs and trigger the search ===
+// Fill inputs and trigger the search 
 function fillAndSubmitSearchForm(job, location) {
   const jobInput = document.querySelector('input[name="q"]');
   const locationInput = document.querySelector('input[name="l"]');
@@ -59,7 +55,7 @@ function fillAndSubmitSearchForm(job, location) {
   }
 }
 
-// === Auto-click first matching job ===
+//  Auto-click first matching job 
 function startAutoApply(searchTerm) {
     const jobCards = document.querySelectorAll('div.cardOutline.tapItem');
     console.log(`[Content] Found ${jobCards.length} job cards`);
@@ -100,7 +96,7 @@ function startAutoApply(searchTerm) {
     console.log('❌ No matching job found on this page');
 }
 
-// === Reliable Apply button click + fallback open new tab ===
+//  Reliable Apply button click + fallback open new tab 
 function clickApplyButton() {
   console.log('⏳ Waiting for Apply button or job URL...');
 
@@ -158,14 +154,14 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     const url = window.location.href;
     if (url.includes('/viewjob')) {
-      console.log('[Content] On viewjob page trying to apply automatically');
+      console.log('On viewjob page trying to apply automatically');
       handleViewJobPage();
     }
   }, 2000);
 });
 
 function handleViewJobPage() {
-  console.log('[Content] Handling viewjob page trying to apply automatically');
+  console.log('Handling viewjob page trying to apply automatically');
   waitAndClickApplyButton();
 }
 
@@ -206,4 +202,110 @@ function waitAndClickApplyButton() {
       clearInterval(interval);
     }
   }, 1000);
+}
+
+
+// smart apply page
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const url = window.location.href;
+    if (url.includes('smartapply')) {
+      console.log('On SmartApply page. Waiting 15 seconds for manual resume selection...');
+
+      setTimeout(() => {
+        console.log('⏳ 15 seconds passed. Attempting to click Continue...');
+        const continueBtn = [...document.querySelectorAll('button')]
+            .find(btn => btn.innerText.trim().toLowerCase() === 'continue');
+
+        if (continueBtn) {
+              continueBtn.click();
+              console.log('✅ Clicked Continue on SmartApply');
+              setTimeout(() => {
+                  handlePostResumeFlow();
+              }, 3000); // Small delay to allow next page to load
+          } else {
+          console.warn('❌ Continue button not found on SmartApply');
+        }
+      }, 15000);
+    }
+  }, 2000);
+});
+
+
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const url = window.location.href;
+    if (url.includes('smartapply')) {
+      console.log('On SmartApply page. Waiting 15 seconds for manual resume selection...');
+
+      setTimeout(() => {
+        console.log('⏳ 15 seconds passed. Attempting to click Continue...');
+        const continueBtn = [...document.querySelectorAll('button')]
+            .find(btn => btn.innerText.trim().toLowerCase() === 'continue');
+
+        if (continueBtn) {
+              continueBtn.click();
+              console.log('✅ Clicked Continue on SmartApply');
+              setTimeout(() => {
+                  handlePostResumeFlow();
+              }, 3000); // Small delay to allow next page to load
+          } else {
+          console.warn('❌ Continue button not found on SmartApply');
+        }
+      }, 15000);
+    }
+
+    // 👇 ADD THIS
+    if (url.includes('smartapply')) {
+      console.log('👀 Watching SmartApply page for post-upload flow...');
+
+      const interval = setInterval(() => {
+        handlePostResumeFlow();
+      }, 3000);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        console.log('🛑 Stopped watching SmartApply after 1 minute');
+      }, 60000);
+    }
+  }, 2000);
+});
+
+function handlePostResumeFlow() {
+  console.log('🔍 Checking post-resume-upload flow...');
+
+  // Case 1️⃣ - Confirmation Page: Application submitted
+  if (document.body.innerText.toLowerCase().includes('application submitted')) {
+      console.log('✅ Application submitted. Sending message to close tab...');
+      chrome.runtime.sendMessage({ type: 'close_this_tab' });
+      return;
+  }
+
+  // Case 2️⃣ - Additional Employer Questions / SmartApply Continue Buttons / Submit
+  const nextOrSubmitOrContinueBtn = [...document.querySelectorAll('button')]
+      .find(btn => {
+          const text = btn.innerText.trim().toLowerCase();
+          return text.includes('next') || text.includes('submit') || text.includes('continue');
+      });
+
+  const testIdContinueBtn = document.querySelector('button[data-testid="continue-button"]');
+
+  if (nextOrSubmitOrContinueBtn) {
+      console.log('➡️ Found "Next", "Submit", or "Continue" button. Clicking...');
+      nextOrSubmitOrContinueBtn.click();
+      return;
+  } else if (testIdContinueBtn) {
+      console.log('➡️ Found button with data-testid="continue-button". Clicking...');
+      testIdContinueBtn.click();
+      return;
+  }
+
+  // Case 3️⃣ - Redirected to External Site (not on Indeed)
+  if (!window.location.hostname.includes('indeed.com')) {
+      console.log('🌐 Redirected off Indeed to:', window.location.hostname);
+      chrome.runtime.sendMessage({ type: 'close_this_tab' });
+      return;
+  }
+
+  console.log('❌ No recognizable post-upload flow detected.');
 }

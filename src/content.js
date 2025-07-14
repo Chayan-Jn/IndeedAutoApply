@@ -8,7 +8,7 @@ window.addEventListener('load', () => {
     if (url.includes('/jobs?q=')) {
       console.log('[Content] On search results page');
       const queryParam = new URLSearchParams(window.location.search).get('q') || '';
-      collectMatchingJobLinks(queryParam.toLowerCase());
+      collectJobsAcrossPages(queryParam.toLowerCase());
     } else {
       console.log('[Content] On homepage – waiting for extension trigger');
     }
@@ -78,6 +78,36 @@ function collectMatchingJobLinks(searchTerm) {
   console.log(`[Content] Collected ${links.length} links for queue`);
   chrome.runtime.sendMessage({ type: 'init_queue', links });
 }
+
+async function collectJobsAcrossPages(searchTerm) {
+  let page = 1;
+  let morePages = true;
+
+  while (morePages) {
+    console.log(`[Content] Collecting jobs on page ${page}`);
+
+    collectMatchingJobLinks(searchTerm);
+
+    // Wait 2.5 seconds to allow the page to update after navigation
+    await new Promise(r => setTimeout(r, 2500));
+
+    // Find the "Next" button by data-testid attribute
+    const nextBtn = document.querySelector('a[data-testid="pagination-page-next"]');
+
+    if (nextBtn && !nextBtn.classList.contains('disabled')) {
+      console.log('[Content] Going to next page:', nextBtn.href);
+      nextBtn.click();
+      page++;
+    } else {
+      console.log('[Content] No next page found or disabled. Finished pagination.');
+      morePages = false;
+    }
+
+    // Wait some time for the next page to load properly before next iteration
+    await new Promise(r => setTimeout(r, 2500));
+  }
+}
+
 
 
 // Handle /viewjob page auto-apply flow

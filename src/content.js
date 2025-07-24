@@ -6,11 +6,13 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     const url = window.location.href;
     if (url.includes('/jobs?q=')) {
+      
       console.log('[Content] On search results page');
+      sessionStorage.removeItem('smartapplyAlertShown'); // Reset for new search
       const queryParam = new URLSearchParams(window.location.search).get('q') || '';
       collectJobsAcrossPages(queryParam.toLowerCase());
     } else {
-      console.log('[Content] On homepage – waiting for extension trigger');
+      console.log('[Content] On homepage - waiting for extension trigger');
     }
   }, 2500);
 });
@@ -172,9 +174,14 @@ function waitAndClickApplyButton() {
 window.addEventListener('load', () => {
   setTimeout(() => {
     if (window.location.href.includes('smartapply')) {
-      console.log('On SmartApply page. Waiting 15 seconds for manual resume selection...');
+      console.log('On SmartApply page. Waiting 45 seconds for manual resume selection...');
+      // Check if alert already shown in this session
+      if (!sessionStorage.getItem('smartapplyAlertShown')) {
+        alert("You have 45 seconds to upload/change your resume");
+        sessionStorage.setItem('smartapplyAlertShown', 'true');
+      }
       setTimeout(() => {
-        console.log('⏳ 15 seconds passed. Attempting to click Continue...');
+        console.log('Attempting to click Continue...');
         const continueBtn = [...document.querySelectorAll('button')]
           .find(btn => btn.innerText.trim().toLowerCase() === 'continue');
         if (continueBtn) {
@@ -184,13 +191,13 @@ window.addEventListener('load', () => {
         } else {
           console.warn('❌ Continue button not found on SmartApply');
         }
-      }, 15000);
+      }, 45000);
 
       console.log('👀 Watching SmartApply page for post-upload flow...');
       const interval = setInterval(handlePostResumeFlow, 3000);
       setTimeout(() => {
         clearInterval(interval);
-        console.log('🛑 Stopped watching SmartApply after 1 minute');
+        console.log(' Stopped watching SmartApply after 1 minute');
       }, 60000);
     }
   }, 2000);

@@ -62,6 +62,30 @@ function collectMatchingJobLinks(searchTerm) {
   const jobCards = document.querySelectorAll('div.cardOutline.tapItem');
   const links = [];
 
+  // Normalize searchTerm to lowercase
+  const lowerSearchTerm = searchTerm.toLowerCase();
+
+  // Generate search variants if the term contains "intern"
+  let searchVariants = [lowerSearchTerm];
+  if (lowerSearchTerm.includes('intern')) {
+    // Extract main keyword before 'intern'
+    // E.g. "python intern" => "python"
+    const mainKeyword = lowerSearchTerm.replace(/intern/gi, '').trim();
+
+    // If mainKeyword exists, generate common intern-related variants
+    if (mainKeyword) {
+      searchVariants = [
+        `${mainKeyword} intern`,
+        `${mainKeyword} developer intern`,
+        `${mainKeyword} internship`,
+        `${mainKeyword} engineering intern`,
+        `${mainKeyword} software intern`,
+        `${mainKeyword} dev intern`,
+        `${mainKeyword} intern developer`
+      ].map(s => s.trim());
+    }
+  }
+
   jobCards.forEach(card => {
     const titleSpan = card.querySelector('h2.jobTitle a span[title]');
     const appliedBadge = card.querySelector('[aria-label*="Applied"]');
@@ -70,7 +94,10 @@ function collectMatchingJobLinks(searchTerm) {
 
     if (titleSpan && !appliedBadge && !companySiteApplyBadge && !companySiteApplyText) {
       const jobTitle = titleSpan.title.toLowerCase();
-      if (jobTitle.includes(searchTerm)) {
+
+      // Check if jobTitle includes any of the search variants
+      const matches = searchVariants.some(variant => jobTitle.includes(variant));
+      if (matches) {
         const link = titleSpan.closest('a')?.href;
         if (link) links.push(link);
       }
@@ -80,6 +107,7 @@ function collectMatchingJobLinks(searchTerm) {
   console.log(`[Content] Collected ${links.length} links for queue`);
   chrome.runtime.sendMessage({ type: 'init_queue', links });
 }
+
 
 async function collectJobsAcrossPages(searchTerm) {
   let page = 1;
